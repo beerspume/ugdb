@@ -9,7 +9,8 @@
 #include <curses.h>   
 #include <stdlib.h>
 #include <math.h>
-
+#include <sys/types.h>
+#include <regex.h>
 
 typedef struct oData
 {
@@ -26,13 +27,19 @@ typedef struct codeLine
 
 const char codeTitle[]="Code";
 const char regTitle[]="Registers";
+const char statusTitle[]="Status:";
+const char statusTextP[]="[Opened File:%s][Entry Point:%s]";
+
 int codeSX,codeSY,codeW,codeH;
 int regSX,regSY,regW,regH;
+int statusSY,statusSX;
 FILE* outstream;
 FILE* instream;
 long lastOffset=0;
 oData* codeOfFile=NULL;
 char cmd[100];
+int err;
+char errbuf[1024];
 
 int SW=0x00000000;
 int FLD=0x00000001;
@@ -42,6 +49,9 @@ int codeDisBufLineNum=0;
 int codeDisCurPoint=0;
 int codeDisSLine=0;
 
+char entryPointAddress[65];
+char openedFilename[65];
+char nofileisopenedText[]="no file is opened";
 
 void openFile();
 void refreshCodeZone();
@@ -88,6 +98,13 @@ void clearCodeDisBuf(){
 	codeDisBufLineNum=0;
 	codeDisCurPoint=0;
 	codeDisSLine=0;
+}
+
+void refreshStatusText(){
+	if(!(SW&FLD)){
+		memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
+	}
+	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress);	
 }
 
 void refreshCodeZone(){
@@ -197,23 +214,29 @@ void clearAllZone(){
 }
 
 void drawFrame(){
-	codeSY=1;codeSX=3;codeW=80;codeH=LINES-4;
-	regSY=codeW+2;regSX=3;regW=COLS-codeW-3;regH=LINES-4;
+	codeSY=1;codeSX=3;codeW=80;codeH=LINES-6;
+	regSY=codeW+2;regSX=3;regW=COLS-codeW-3;regH=LINES-6;
+	statusSY=2+strlen(statusTitle);statusSX=LINES-2;
 
 	clearAllZone();
 
 	// box(stdscr,ACS_VLINE,ACS_HLINE);
 	border(ACS_VLINE, ACS_VLINE, ACS_HLINE, ACS_HLINE, 0, 0, 0, 0);
 	mvhline(2,1,ACS_HLINE,COLS-2);
-	mvvline(1,codeW+2,ACS_VLINE,LINES-2);
+	mvhline(LINES-3,1,ACS_HLINE,COLS-2);
+	mvvline(1,codeW+2,ACS_VLINE,LINES-4);
+
 	mvaddch(2,codeW+2,ACS_PLUS);
+	mvaddch(LINES-3,codeW+2,ACS_BTEE);
 	mvaddch(0,codeW+2,ACS_TTEE);
 	mvaddch(2,COLS-1,ACS_RTEE);
-	mvaddch(LINES-1,codeW+2,ACS_BTEE);
+	mvaddch(LINES-3,COLS-1,ACS_RTEE);
 	mvaddch(2,0,ACS_LTEE);
+	mvaddch(LINES-3,0,ACS_LTEE);
 	
 	mvaddstr(1,codeSY+(codeW-strlen(codeTitle))/2,codeTitle);
 	mvaddstr(1,regSY+(regW-strlen(regTitle))/2,regTitle);
+	mvaddstr(LINES-2,1,statusTitle);
 
 	refresh();
 }
@@ -351,18 +374,43 @@ void loadSegInfo(){
 		addToDisplayBuf(tmpLine);
 		refreshCodeZone();
 
+		for(int i=0;i<lines;i++){
+			if(strlen(entryPointAddress)==0){
+				memset(entryPointAddress,'\0',sizeof(entryPointAddress));
+				regex_t compiled;
+				err=regcomp(&compiled,"Entry point: ([0-9a-fxA-F]*)",REG_EXTENDED);
+				if(err==0){
+					int matchLen=2;
+					regmatch_t match[matchLen];
+					err=regexec(&compiled,codeDisBuf[i]->text,matchLen,match,0);
+					if(err==0){
+						int len=match[1].rm_eo-match[1].rm_so;
+						if(len){
+							memcpy(entryPointAddress,codeDisBuf[i]->text+match[1].rm_so,len);
+						}
+					}
+				}
+				if(err){
+					regerror(err,&compiled,errbuf,sizeof(errbuf));
+				}
+				regfree(&compiled);
+			}
+
+		}
 		freeOData(&codeOfFile);
 	}else{
-		openFile();
+		// openFile();
 	}
+	refreshStatusText();
 }
 
 void openFile(){
 	execCmd("file a.out");
 	clearOutputBuf();
 	SW=SW|FLD;
-	loadSegInfo();
 
+	char filename[]="a.out";
+	memcpy(openedFilename,filename,sizeof(filename));
 }
 
 int main(int argc,char *argv[]){
@@ -371,32 +419,36 @@ int main(int argc,char *argv[]){
 	initial();
 	drawFrame();
 	curs_set(0);
-	int ch;
-	while((ch=getch())!=27){
-		switch(ch){
-		case 'o':
-			openFile();
-			break;
-		case 'l':
-			loadSegInfo();
-			break;
-		case 'c':
-			clearCodeZone();
-			break;
-		case 'r':
-			drawFrame();
-			break;
-		case KEY_UP:
-			moveUp();
-			break;
-		case KEY_DOWN:
-			moveDown();
-			break;
-		default:
-			;
-		}
-	}
+	pid_t pid;
+	// if((pid=fork())==0){
 
+	// }else{	
+		int ch;
+		while((ch=getch())!=27){
+			switch(ch){
+			case 'o':
+				openFile();
+				break;
+			case 'l':
+				loadSegInfo();
+				break;
+			case 'c':
+				clearCodeZone();
+				break;
+			case 'r':
+				drawFrame();
+				break;
+			case KEY_UP:
+				moveUp();
+				break;
+			case KEY_DOWN:
+				moveDown();
+				break;
+			default:
+				;
+			}
+		}
+	// }
 	end();
 
 	return 0;
