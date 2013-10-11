@@ -8,6 +8,7 @@
 #include <string.h>
 #include <curses.h>   
 #include <stdlib.h>
+#include <math.h>
 
 
 typedef struct oData
@@ -48,6 +49,18 @@ void clearCodeZone();
 void createCodeLine(codeLine** cl,int len);
 void freeCodeLine(codeLine** cl);
 
+int minV(int v1,int v2){
+	if(v1<v2) return v1;
+	else return v2;
+}
+int getDigit(int n){
+	int len=1;
+	while(1){
+		if(n/(int)pow(10,len)==0)break;	
+		len++;
+	}
+	return len;
+}
 void covTabToSpace(char* p){
 	while(1){
 		if(*p=='\t' || *p=='\n')*p=' ';
@@ -82,25 +95,28 @@ void refreshCodeZone(){
 	clearCodeZone();
 	int i=0;
 	int cl=i+codeDisSLine;
+	int lineHeadLen=getDigit(minV(codeDisSLine+codeH<codeDisBufLineNum?(codeDisSLine+codeH-1):(codeDisSLine+codeH),codeDisBufLineNum))+1;
 	char lineP[10];
 	memset(lineP,0,sizeof(lineP));
-	sprintf(lineP,"%%-%d.%ds",codeW-3,codeW-3);
+	sprintf(lineP,"%%-%d.%ds",codeW-lineHeadLen,codeW-lineHeadLen);
 	for(;i<codeH;i++){
 		cl=i+codeDisSLine;
 		if(cl>=codeDisBufLineNum)break;
 		if(cl==codeDisCurPoint)attron(A_REVERSE);
 		if((codeDisSLine>0 && i==0)||(codeDisSLine+codeH<codeDisBufLineNum && i==codeH-1)){
-			mvprintw(codeSX+i,codeSY+3,"...");
+			mvprintw(codeSX+i,codeSY+lineHeadLen,"...");
 		}else{
 			mvprintw(codeSX+i,codeSY,"%d:",cl+1);
 			char tmpline[1024];
 			memset(tmpline,0,sizeof(tmpline));
 			sprintf(tmpline,lineP,codeDisBuf[cl]->text);
 			covTabToSpace(tmpline);
-			mvprintw(codeSX+i,codeSY+3,"%s",tmpline);
+			mvprintw(codeSX+i,codeSY+lineHeadLen,"%s",tmpline);
 		}
 		if(cl==codeDisCurPoint)attroff(A_REVERSE);
 	}
+// mvprintw(0,0,"%d",getDigit(codeDisBufLineNum));
+
 }
 
 void moveUp(){
