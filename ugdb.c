@@ -110,8 +110,7 @@ int rmRunningFlag(){
 }
 
 int minV(int v1,int v2){
-	if(v1<v2) return v1;
-	else return v2;
+	return v1<v2?v1:v2;
 }
 int getDigit(int n){
 	int len=1;
@@ -154,7 +153,11 @@ void refreshStatusText(){
 	if(!(SW&FLD)){
 		memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
 	}
-	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
+    char spaceP[20];
+    memset(spaceP,'\0',sizeof(spaceP));
+    sprintf(spaceP,"%%%d.%ds",COLS-statusSY-1,COLS-statusSY-1);
+    mvprintw(statusSX,statusSY,spaceP," ");	
+    mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
 	refresh();
 }
 
