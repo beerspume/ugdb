@@ -11,6 +11,7 @@
 #include <math.h>
 #include <sys/types.h>
 #include <regex.h>
+#include <time.h>
 
 typedef struct oData
 {
@@ -28,7 +29,7 @@ typedef struct codeLine
 const char codeTitle[]="Code";
 const char regTitle[]="Registers";
 const char statusTitle[]="Status:";
-const char statusTextP[]="[Opened File:%s][Entry Point:%s]";
+const char statusTextP[]="[Opened File:%s][Entry Point:%s][TimeStamp:%d]";
 
 int codeSX,codeSY,codeW,codeH;
 int regSX,regSY,regW,regH;
@@ -52,6 +53,8 @@ int codeDisSLine=0;
 char entryPointAddress[65];
 char openedFilename[65];
 char nofileisopenedText[]="no file is opened";
+
+int* mainThreadRunning;
 
 void openFile();
 void refreshCodeZone();
@@ -101,10 +104,11 @@ void clearCodeDisBuf(){
 }
 
 void refreshStatusText(){
-	if(!(SW&FLD)){
-		memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
-	}
-	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress);	
+	// if(!(SW&FLD)){
+	// 	memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
+	// }
+	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
+	refresh();
 }
 
 void refreshCodeZone(){
@@ -419,10 +423,16 @@ int main(int argc,char *argv[]){
 	initial();
 	drawFrame();
 	curs_set(0);
+	mainThreadRunning=malloc(sizeof(int));
+	*mainThreadRunning=1;
 	pid_t pid;
-	// if((pid=fork())==0){
-
-	// }else{	
+	if((pid=fork())==0){
+		while(*mainThreadRunning){
+			usleep(1000000*3);
+			refreshStatusText();
+			printf("MainThreadRunning=%d",*mainThreadRunning);
+		}
+	}else{	
 		int ch;
 		while((ch=getch())!=27){
 			switch(ch){
@@ -448,8 +458,9 @@ int main(int argc,char *argv[]){
 				;
 			}
 		}
-	// }
-	end();
+		end();
+		*mainThreadRunning=0;
+	}
 
 	return 0;
 }
