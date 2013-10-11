@@ -30,6 +30,19 @@ typedef struct codeLine
 	int linenum;
 } codeLine;
 
+typedef struct segCode
+{
+	char addr[20];
+	char lab[100];
+	char text[200];
+}segCode;
+typedef struct segLine{
+	char startAdd[20];
+	char endAdd[20];
+	char name[100];
+	char** segCode;
+} segLine;
+
 const char codeTitle[]="Code";
 const char regTitle[]="Registers";
 const char statusTitle[]="Status:";
@@ -57,6 +70,10 @@ int codeDisSLine=0;
 char entryPointAddress[65];
 char openedFilename[65];
 char nofileisopenedText[]="no file is opened";
+
+int seglinesnum=1024;
+int seglineslen=0;
+segLine seglines[1024];
 
 int* mainThreadRunning;
 
@@ -134,9 +151,9 @@ void clearCodeDisBuf(){
 }
 
 void refreshStatusText(){
-	// if(!(SW&FLD)){
-	// 	memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
-	// }
+	if(!(SW&FLD)){
+		memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
+	}
 	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
 	refresh();
 }
@@ -165,8 +182,9 @@ void refreshCodeZone(){
 			mvprintw(codeSX+i,codeSY+lineHeadLen,"%s",tmpline);
 		}
 		if(cl==codeDisCurPoint)attroff(A_REVERSE);
+		// if(cl==codeDisCurPoint)mvprintw(0,0,"%70.70s"," ");
+		// if(cl==codeDisCurPoint)mvprintw(0,0,"%s,%s,%s",seglines[cl].startAdd,seglines[cl].endAdd,seglines[cl].name);
 	}
-// mvprintw(0,0,"%d",getDigit(codeDisBufLineNum));
 
 }
 
@@ -224,8 +242,9 @@ void initial()
 	initscr();   
 	cbreak();   
 	nonl();   
-	noecho();   
-	intrflush(stdscr,FALSE);   
+	noecho();
+	// raw();
+	intrflush(stdscr,FALSE);
 	keypad(stdscr,TRUE);   
 	refresh();   
 }
@@ -374,6 +393,79 @@ void execCmd(char* cmd){
 	fflush(outstream);
 }
 
+int parseEntryPoint(char* line,char* target,int targetLen){
+	int ret=0;
+	regex_t compiled;
+	err=regcomp(&compiled,"Entry point: ([0-9a-fxA-F]*)",REG_EXTENDED);
+	if(err==0){
+		int matchLen=2;
+		regmatch_t match[matchLen];
+		err=regexec(&compiled,line,matchLen,match,0);
+		if(err==0){
+			int len=match[1].rm_eo-match[1].rm_so;
+			if(len){
+				memset(target,'\0',targetLen);
+				memcpy(target,line+match[1].rm_so,len);
+				ret=1;
+			}
+		}
+	}
+	if(err){
+		regerror(err,&compiled,errbuf,sizeof(errbuf));
+		ret=-1;
+	}
+	regfree(&compiled);
+	return ret;
+}
+
+void freeSegLine(){
+	seglineslen=0;
+}
+
+int parseSegLine(char* line){
+	int ret=0;
+	regex_t compiled;
+	err=regcomp(&compiled,"(0x[0-9a-fA-F]*)*\\s*-\\s*(0x[0-9a-fA-F]*)*\\s*is\\s*(\\.[^\\s]*)\\s*$",REG_EXTENDED);
+	if(err==0){
+		int matchLen=4;
+		regmatch_t match[matchLen];
+		err=regexec(&compiled,line,matchLen,match,0);
+		if(err==0){
+			memset(seglines[seglineslen].startAdd,'\0',sizeof(seglines[seglineslen].startAdd));
+			memset(seglines[seglineslen].endAdd,'\0',sizeof(seglines[seglineslen].endAdd));
+			memset(seglines[seglineslen].name,'\0',sizeof(seglines[seglineslen].name));
+			int len=match[1].rm_eo-match[1].rm_so;
+			if(len){
+				memcpy(seglines[seglineslen].startAdd,line+match[1].rm_so,len);
+			}
+			len=match[2].rm_eo-match[2].rm_so;
+			if(len){
+				memcpy(seglines[seglineslen].endAdd,line+match[2].rm_so,len);
+			}
+			len=match[3].rm_eo-match[3].rm_so;
+			if(len){
+				memcpy(seglines[seglineslen].name,line+match[3].rm_so,len);
+			}
+			seglineslen++;
+			ret=1;
+		}
+	}
+	if(err){
+		regerror(err,&compiled,errbuf,sizeof(errbuf));
+		ret=-1;
+	}
+	regfree(&compiled);
+	return ret;
+}
+
+void parseSegInfoLine(char* line){
+	if(strlen(entryPointAddress)==0){
+		parseEntryPoint(line,entryPointAddress,sizeof(entryPointAddress));
+	}
+	if(parseSegLine(line)==1){
+		addToDisplayBuf(line);
+	}
+}
 
 void loadSegInfo(){
 	if(SW & FLD >0){
@@ -400,42 +492,18 @@ void loadSegInfo(){
 			if(*p=='\n'){
 				i++;
 				*p='\0';
-				addToDisplayBuf(tmpLine);
+				parseSegInfoLine(tmpLine);
 				tmpLine=p+1;
 			}
 			p++;
 		}
-		addToDisplayBuf(tmpLine);
+		parseSegInfoLine(tmpLine);
+
+		freeOData(&codeOfFile);
+
 		refreshCodeZone();
 
-		for(int i=0;i<lines;i++){
-			if(strlen(entryPointAddress)==0){
-				memset(entryPointAddress,'\0',sizeof(entryPointAddress));
-				regex_t compiled;
-				err=regcomp(&compiled,"Entry point: ([0-9a-fxA-F]*)",REG_EXTENDED);
-				if(err==0){
-					int matchLen=2;
-					regmatch_t match[matchLen];
-					err=regexec(&compiled,codeDisBuf[i]->text,matchLen,match,0);
-					if(err==0){
-						int len=match[1].rm_eo-match[1].rm_so;
-						if(len){
-							memcpy(entryPointAddress,codeDisBuf[i]->text+match[1].rm_so,len);
-						}
-					}
-				}
-				if(err){
-					regerror(err,&compiled,errbuf,sizeof(errbuf));
-				}
-				regfree(&compiled);
-			}
-
-		}
-		freeOData(&codeOfFile);
-	}else{
-		// openFile();
 	}
-	// refreshStatusText();
 }
 
 void openFile(){
@@ -449,51 +517,43 @@ void openFile(){
 }
 
 int main(int argc,char *argv[]){
-	createRunningFlag();
-	setRunningFlag(1);
+	// createRunningFlag();
+	// setRunningFlag(1);
 
 	initGdb();
 	initial();
 	drawFrame();
 	curs_set(0);
-
-	pid_t pid;
-	if((pid=fork())==0){
-		while(getRunningFlag()){
-			usleep(1000000/1000*3);
-			refreshStatusText();
+	timeout(300);
+	int ch;
+	while((ch=getch())!=27){
+		switch(ch){
+		case 'o':
+			openFile();
+			break;
+		case 'l':
+			loadSegInfo();
+			break;
+		case 'c':
+			clearCodeZone();
+			break;
+		case 'r':
+			drawFrame();
+			break;
+		case KEY_UP:
+			moveUp();
+			break;
+		case KEY_DOWN:
+			moveDown();
+			break;
+		default:
+			;
 		}
-		rmRunningFlag();
-	}else{	
-		int ch;
-		while((ch=getch())!=27){
-			switch(ch){
-			case 'o':
-				openFile();
-				break;
-			case 'l':
-				loadSegInfo();
-				break;
-			case 'c':
-				clearCodeZone();
-				break;
-			case 'r':
-				drawFrame();
-				break;
-			case KEY_UP:
-				moveUp();
-				break;
-			case KEY_DOWN:
-				moveDown();
-				break;
-			default:
-				;
-			}
-		}
-		setRunningFlag(0);
-		end();
-
+		refreshStatusText();
 	}
+	// setRunningFlag(0);
+	end();
+
 	return 0;
 }
 
