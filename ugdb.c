@@ -12,6 +12,10 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <time.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+#define IPC_KEY 8989
 
 typedef struct oData
 {
@@ -61,6 +65,32 @@ void refreshCodeZone();
 void clearCodeZone();
 void createCodeLine(codeLine** cl,int len);
 void freeCodeLine(codeLine** cl);
+
+key_t ftok_key;
+int shm_id;
+
+void createRunningFlag(){
+	ftok_key=ftok(".",IPC_KEY);
+	shm_id=shmget(ftok_key,sizeof(int),IPC_CREAT|0x0644);
+	if(shm_id==-1){
+		printf("%d\n",shm_id);
+	}
+}
+void setRunningFlag(int v){
+	char* p=shmat(shm_id,0,0);
+	*p=v;
+	shmdt(p);
+}
+
+int getRunningFlag(){
+	char* p=shmat(shm_id,0,0);
+	int ret=*p;
+	shmdt(p);
+	return ret;
+}
+int rmRunningFlag(){
+	shmctl(shm_id,IPC_RMID,NULL);
+}
 
 int minV(int v1,int v2){
 	if(v1<v2) return v1;
@@ -405,7 +435,7 @@ void loadSegInfo(){
 	}else{
 		// openFile();
 	}
-	refreshStatusText();
+	// refreshStatusText();
 }
 
 void openFile(){
@@ -414,24 +444,26 @@ void openFile(){
 	SW=SW|FLD;
 
 	char filename[]="a.out";
-	memcpy(openedFilename,filename,sizeof(filename));
+	strcpy(openedFilename,filename);
+	// refreshStatusText();
 }
 
 int main(int argc,char *argv[]){
+	createRunningFlag();
+	setRunningFlag(1);
 
 	initGdb();
 	initial();
 	drawFrame();
 	curs_set(0);
-	mainThreadRunning=malloc(sizeof(int));
-	*mainThreadRunning=1;
+
 	pid_t pid;
 	if((pid=fork())==0){
-		while(*mainThreadRunning){
-			usleep(1000000*3);
+		while(getRunningFlag()){
+			usleep(1000000/1000*3);
 			refreshStatusText();
-			printf("MainThreadRunning=%d",*mainThreadRunning);
 		}
+		rmRunningFlag();
 	}else{	
 		int ch;
 		while((ch=getch())!=27){
@@ -458,10 +490,10 @@ int main(int argc,char *argv[]){
 				;
 			}
 		}
+		setRunningFlag(0);
 		end();
-		*mainThreadRunning=0;
-	}
 
+	}
 	return 0;
 }
 
