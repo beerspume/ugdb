@@ -153,11 +153,12 @@ void refreshStatusText(){
 	if(!(SW&FLD)){
 		memcpy(openedFilename,nofileisopenedText,sizeof(nofileisopenedText));
 	}
-    char spaceP[20];
-    memset(spaceP,'\0',sizeof(spaceP));
-    sprintf(spaceP,"%%%d.%ds",COLS-statusSY-1,COLS-statusSY-1);
-    mvprintw(statusSX,statusSY,spaceP," ");	
-    mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
+	char spaceP[20];
+	memset(spaceP,'\0',sizeof(spaceP));
+	sprintf(spaceP,"%%%d.%ds",COLS-statusSY-1,COLS-statusSY-1);
+	mvprintw(statusSX,statusSY,spaceP," ");
+	mvprintw(statusSX,statusSY,statusTextP,openedFilename,entryPointAddress,time(NULL));
+
 	refresh();
 }
 
