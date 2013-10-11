@@ -19,7 +19,8 @@ typedef struct oData
 
 typedef struct codeLine
 {
-	char* textline;
+	char* text;
+	int linenum;
 } codeLine;
 
 const char codeTitle[]="Code";
@@ -35,7 +36,84 @@ char cmd[100];
 int SW=0x00000000;
 int FLD=0x00000001;
 
+codeLine** codeDisBuf=NULL;
+int codeDisBufLineNum=0;
+int codeDisCurPoint=0;
+int codeDisSLine=0;
+
+
 void openFile();
+void refreshCodeZone();
+void clearCodeZone();
+void createCodeLine(codeLine** cl,int len);
+void freeCodeLine(codeLine** cl);
+
+void covTabToSpace(char* p){
+	while(1){
+		if(*p=='\t' || *p=='\n')*p=' ';
+		else if(*p=='\0')break;
+		p++;
+	}
+}
+void addToDisplayBuf(char* line){
+	if(codeDisBuf==NULL){
+		codeDisBuf=malloc(1024*sizeof(codeLine*));
+		memset(codeDisBuf,0,1024*sizeof(codeLine*));
+	}
+	int len=strlen(line);
+	createCodeLine(&codeDisBuf[codeDisBufLineNum],len+1);
+	strcpy(codeDisBuf[codeDisBufLineNum]->text,line);
+	codeDisBuf[codeDisBufLineNum]->linenum=codeDisBufLineNum;
+	codeDisBufLineNum++;
+}
+void clearCodeDisBuf(){
+	for(int i=0;i<codeDisBufLineNum;i++){
+		freeCodeLine(&codeDisBuf[i]);
+	}
+	free(codeDisBuf);
+	codeDisBuf=NULL;
+	codeDisBufLineNum=0;
+	codeDisCurPoint=0;
+	codeDisSLine=0;
+}
+
+void refreshCodeZone(){
+	// mvprintw(0,0,"Total:%d,Start:%d,Current:%d,Height:%d",codeDisBufLineNum,codeDisSLine,codeDisCurPoint,codeH);
+	clearCodeZone();
+	int i=0;
+	int cl=i+codeDisSLine;
+	char lineP[10];
+	memset(lineP,0,sizeof(lineP));
+	sprintf(lineP,"%%-%d.%ds",codeW-3,codeW-3);
+	for(;i<codeH;i++){
+		cl=i+codeDisSLine;
+		if(cl>=codeDisBufLineNum)break;
+		if(cl==codeDisCurPoint)attron(A_REVERSE);
+		if((codeDisSLine>0 && i==0)||(codeDisSLine+codeH<codeDisBufLineNum && i==codeH-1)){
+			mvprintw(codeSX+i,codeSY+3,"...");
+		}else{
+			mvprintw(codeSX+i,codeSY,"%d:",cl+1);
+			char tmpline[1024];
+			memset(tmpline,0,sizeof(tmpline));
+			sprintf(tmpline,lineP,codeDisBuf[cl]->text);
+			covTabToSpace(tmpline);
+			mvprintw(codeSX+i,codeSY+3,"%s",tmpline);
+		}
+		if(cl==codeDisCurPoint)attroff(A_REVERSE);
+	}
+}
+
+void moveUp(){
+	(codeDisCurPoint<=0)?(codeDisCurPoint==0):(codeDisCurPoint--);
+	if(codeDisSLine>=codeDisCurPoint)codeDisSLine--;
+	codeDisSLine<0?codeDisSLine=0:1;
+	refreshCodeZone();
+}
+void moveDown(){
+	(codeDisCurPoint>=codeDisBufLineNum-1)?(codeDisCurPoint==codeDisBufLineNum-1):(codeDisCurPoint++);
+	if(codeDisSLine+codeH-1<=codeDisCurPoint)codeDisSLine=codeDisCurPoint-codeH+2;
+	refreshCodeZone();
+}
 
 void readOutputSleep(){
 	usleep((1000000/1000)*2);
@@ -59,15 +137,15 @@ void freeOData(oData** data){
 	}
 }
 
-void createCodeLine(codeLine** cl){
+void createCodeLine(codeLine** cl,int len){
 	*cl=(codeLine*)malloc(sizeof(struct codeLine));
-	(*cl)->textline=NULL;
+	(*cl)->text=malloc(len);
 }
 
 void freeCodeLine(codeLine** cl){
 	if(*cl!=NULL){
-		if((*cl)->textline!=NULL){
-			// free((*cl)->textline);
+		if((*cl)->text!=NULL){
+			free((*cl)->text);
 		}
 		free(*cl);
 		*cl=NULL;
@@ -141,6 +219,9 @@ int openInputWin(char* message,char* input){
 }
 
 void end(){
+	nocbreak();
+	echo();
+	nl();
 	endwin();
 	freeOData(&codeOfFile);
 }
@@ -237,37 +318,27 @@ void loadSegInfo(){
 		}
 		lines++;
 
+		clearCodeDisBuf();
 		p=codeOfFile->ptr;
-
-		codeLine** codelines=(codeLine**)malloc(sizeof(codeLine*)*lines);
-		createCodeLine(&codelines[0]);
-		codelines[0]->textline=p;
+		char* tmpLine;
+		tmpLine=p;
 		int i=0;
 		while(*p!='\0'){
 			if(*p=='\n'){
 				i++;
-				createCodeLine(&codelines[i]);
-				codelines[i]->textline=p+1;
 				*p='\0';
+				addToDisplayBuf(tmpLine);
+				tmpLine=p+1;
 			}
 			p++;
 		}
-		clearCodeZone();
-		for(int i=0;i<lines;i++){
-			mvprintw(codeSX+i,codeSY,"%d:",i+1);
-			mvprintw(codeSX+i,codeSY+3,"%s",codelines[i]->textline);
-		}
-
-		for(int i=0;i<lines;i++){
-			freeCodeLine(&codelines[i]);
-		}
-		free(codelines);
+		addToDisplayBuf(tmpLine);
+		refreshCodeZone();
 
 		freeOData(&codeOfFile);
 	}else{
 		openFile();
 	}
-	mvprintw(codeSX+codeH-1,codeSY,"%d,%d",LINES,COLS);
 }
 
 void openFile(){
@@ -298,6 +369,12 @@ int main(int argc,char *argv[]){
 			break;
 		case 'r':
 			drawFrame();
+			break;
+		case KEY_UP:
+			moveUp();
+			break;
+		case KEY_DOWN:
+			moveDown();
 			break;
 		default:
 			;
